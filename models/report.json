@@ -1,0 +1,55 @@
+{
+  "accuracy": 0.999508,
+  "precision": 0.8723,
+  "recall": 0.8367,
+  "f1_score": 0.8542,
+  "auc_roc": 0.9803,
+  "confusion_matrix": {
+    "tp": 82,
+    "fp": 12,
+    "fn": 16,
+    "tn": 56852
+  },
+  "feature_importance": [
+    {
+      "feature": "V14",
+      "importance": 0.362
+    },
+    {
+      "feature": "V10",
+      "importance": 0.1438
+    },
+    {
+      "feature": "V4",
+      "importance": 0.0669
+    },
+    {
+      "feature": "V12",
+      "importance": 0.0556
+    },
+    {
+      "feature": "V20",
+      "importance": 0.0302
+    },
+    {
+      "feature": "Amount",
+      "importance": 0.0281
+    },
+    {
+      "feature": "V8",
+      "importance": 0.0237
+    },
+    {
+      "feature": "V19",
+      "importance": 0.0231
+    },
+    {
+      "feature": "V17",
+      "importance": 0.0222
+    },
+    {
+      "feature": "V7",
+      "importance": 0.0189
+    }
+  ]
+}
