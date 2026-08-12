@@ -1,5 +1,8 @@
 """
-database.py — SQLAlchemy models and session setup (SQLite)
+database.py — SQLAlchemy models and session setup.
+
+Defaults to a SQLite file next to this module; set DATABASE_URL to point at
+any SQLAlchemy-supported backend (PostgreSQL, MySQL, …) instead.
 """
 import os
 import json
@@ -10,23 +13,36 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-BASE_DIR    = os.path.dirname(__file__)
-DB_PATH     = os.path.join(BASE_DIR, "fraudnet.db")
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+BASE_DIR = os.path.dirname(__file__)
+DB_PATH  = os.path.join(BASE_DIR, "fraudnet.db")
+
+# The URL was hardcoded to this file, so a deployment could not point the
+# service at its own database without editing the source. It now comes from the
+# environment, falling back to the local SQLite file so development needs no
+# configuration at all.
+DATABASE_URL = os.environ.get("DATABASE_URL") or f"sqlite:///{DB_PATH}"
+
+# check_same_thread and the PRAGMA statements below are SQLite-only: passing
+# them to any other driver raises. pool_pre_ping matters for a server-backed
+# database — it discards connections the server closed while the app was idle,
+# which is the usual cause of "server closed the connection unexpectedly".
+_IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
     echo=False,
+    **({"connect_args": {"check_same_thread": False}} if _IS_SQLITE
+       else {"pool_pre_ping": True}),
 )
 
-# Enable WAL mode for better concurrency
-@event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_conn, connection_record):
-    cursor = dbapi_conn.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+if _IS_SQLITE:
+    # WAL mode for better concurrency; foreign keys are off by default in SQLite
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
