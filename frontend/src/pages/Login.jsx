@@ -104,10 +104,17 @@ export default function LoginPage({ onLogin }) {
           </form>
         </div>
 
-        {/* Quick-fill presets */}
+        {/* Quick-fill presets — development builds only.
+            These buttons filled in admin/admin123 with one click, and shipped in
+            the production bundle: a login page that hands out an admin session
+            to anyone who opens it. import.meta.env.DEV is false in `vite build`,
+            so they stay available while developing and never reach the delivered
+            artifact. The accounts they reference no longer exist either — the
+            first administrator now comes from ADMIN_USERNAME/ADMIN_PASSWORD. */}
+        {import.meta.env.DEV && (
         <div style={{ marginTop: 16, padding: '14px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8 }}>
           <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
-            Demo Credentials
+            Dev quick-fill — set ADMIN_USERNAME / ADMIN_PASSWORD
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {[
@@ -125,6 +132,7 @@ export default function LoginPage({ onLogin }) {
             ))}
           </div>
         </div>
+        )}
       </div>
     </div>
   )

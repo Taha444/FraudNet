@@ -2,6 +2,7 @@
 auth.py — JWT authentication helpers
 """
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -13,7 +14,17 @@ from sqlalchemy.orm import Session
 
 from .database import get_db, DBUser
 
-SECRET_KEY  = os.environ.get("SECRET_KEY", "fraudnet-dev-secret-change-in-production-2024")
+# The signing key must never fall back to a value that ships in the source. A
+# hardcoded default in a public repository lets anyone mint a valid token for
+# any username — a full authentication bypass, not just a leaked demo password.
+# Without SECRET_KEY set we generate a random one per process instead: tokens
+# stop surviving a restart (a visible nuisance in development) rather than
+# silently accepting forged ones in production.
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = secrets.token_urlsafe(64)
+    print("WARNING: SECRET_KEY is not set — using a random key for this process. "
+          "Tokens will be invalidated on restart. Set SECRET_KEY before deploying.")
 ALGORITHM   = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("TOKEN_EXPIRE_MINUTES", "480"))  # 8 hours
 

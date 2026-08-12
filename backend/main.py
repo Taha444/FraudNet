@@ -46,7 +46,7 @@ from .database import (
 )
 from .auth import (
     verify_password, get_password_hash, create_access_token,
-    get_current_user, get_optional_user, require_role,
+    get_current_user, require_role, _decode_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 
@@ -107,21 +107,36 @@ ws_mgr = _WsManager()
 
 # ─── Startup helpers ───────────────────────────────────────────────────────────
 def _create_default_users():
+    """Bootstrap the first admin account from the environment.
+
+    This used to seed admin/admin123, analyst/analyst123 and viewer/viewer123
+    with the passwords written in this file — so every deployment shipped with
+    three publicly known logins, and printed them to the log on top of that.
+    Now the only account created is one admin whose credentials the operator
+    supplies; if they are absent no account is created at all, and the service
+    says so instead of quietly opening a known door. The remaining users are
+    created by that admin through POST /api/auth/register.
+    """
+    username = os.environ.get("ADMIN_USERNAME")
+    password = os.environ.get("ADMIN_PASSWORD")
+
     db = SessionLocal()
     try:
-        if not db.query(DBUser).first():
-            defaults = [
-                ("admin",   "admin@fraudnet.local",   "admin123",   "admin"),
-                ("analyst", "analyst@fraudnet.local", "analyst123", "analyst"),
-                ("viewer",  "viewer@fraudnet.local",  "viewer123",  "viewer"),
-            ]
-            for uname, email, pwd, role in defaults:
-                db.add(DBUser(
-                    username=uname, email=email,
-                    hashed_password=get_password_hash(pwd), role=role,
-                ))
-            db.commit()
-            print("Default users created: admin/admin123  analyst/analyst123  viewer/viewer123")
+        if db.query(DBUser).first():
+            return                      # already bootstrapped — never re-seed
+        if not username or not password:
+            print("NOTICE: no users exist and ADMIN_USERNAME/ADMIN_PASSWORD are "
+                  "not set — no account was created. Set both and restart to "
+                  "bootstrap the first administrator.")
+            return
+        db.add(DBUser(
+            username=username,
+            email=os.environ.get("ADMIN_EMAIL", f"{username}@fraudnet.local"),
+            hashed_password=get_password_hash(password),
+            role="admin",
+        ))
+        db.commit()
+        print(f"Bootstrapped administrator '{username}' from the environment.")
     finally:
         db.close()
 
@@ -151,10 +166,22 @@ async def lifespan(app: FastAPI):
     _load_thresholds()
 
     if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
-        model  = joblib.load(MODEL_PATH)
-        scaler = joblib.load(SCALER_PATH)
-        print("Model loaded.")
-        if SHAP_OK:
+        # Unpickling reaches for whatever library trained the model, so it fails
+        # on a missing dependency or a version skew between the training and the
+        # deployment environment. Unguarded, that took down startup entirely —
+        # no health check, no login, nothing — even though every prediction
+        # endpoint already handles `model is None`. Degrade instead: the service
+        # stays up and reports the fault rather than refusing to boot.
+        try:
+            model  = joblib.load(MODEL_PATH)
+            scaler = joblib.load(SCALER_PATH)
+            print("Model loaded.")
+        except Exception as e:
+            model = scaler = None
+            print(f"[error] Could not load the model ({type(e).__name__}: {e}). "
+                  f"Prediction endpoints will return 503; everything else works. "
+                  f"Check that the training and runtime dependency versions match.")
+        if model is not None and SHAP_OK:
             try:
                 explainer = _shap.TreeExplainer(model)
                 print("SHAP explainer ready.")
@@ -164,8 +191,11 @@ async def lifespan(app: FastAPI):
         print("[warn] No model found. Run backend/train.py first.")
 
     if os.path.exists(REPORT_PATH):
-        with open(REPORT_PATH) as f:
-            report = json.load(f)
+        try:
+            with open(REPORT_PATH) as f:
+                report = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"[warn] Could not read {REPORT_PATH}: {e}")
 
     yield
 
@@ -446,7 +476,7 @@ async def predict(
     request: Request,
     tx: Transaction,
     db: Session = Depends(get_db),
-    current_user: Optional[DBUser] = Depends(get_optional_user),
+    current_user: DBUser = Depends(get_current_user),
 ):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded. Run train.py first.")
@@ -525,6 +555,7 @@ def recent_transactions(
     limit: int = 30,
     risk: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: DBUser = Depends(get_current_user),
 ):
     q = db.query(DBTransaction).order_by(DBTransaction.created_at.desc())
     if risk:
@@ -594,6 +625,7 @@ def list_alerts(
     status_filter: Optional[str] = None,
     limit: int = 50,
     db: Session = Depends(get_db),
+    current_user: DBUser = Depends(get_current_user),
 ):
     q = db.query(DBAlert).order_by(DBAlert.created_at.desc())
     if status_filter:
@@ -655,7 +687,8 @@ async def update_alert_status(
 
 # ─── Stats ─────────────────────────────────────────────────────────────────────
 @app.get("/api/stats")
-def get_stats(db: Session = Depends(get_db)):
+def get_stats(db: Session = Depends(get_db),
+              current_user: DBUser = Depends(get_current_user)):
     # Base metrics from report.json (training evaluation)
     cm = report.get("confusion_matrix", {"tp": 82, "fp": 12, "fn": 16, "tn": 56852})
     fi = report.get("feature_importance", [])
@@ -693,7 +726,8 @@ def get_stats(db: Session = Depends(get_db)):
 
 # ─── Timeseries ────────────────────────────────────────────────────────────────
 @app.get("/api/timeseries")
-def timeseries(days: int = 30, db: Session = Depends(get_db)):
+def timeseries(days: int = 30, db: Session = Depends(get_db),
+               current_user: DBUser = Depends(get_current_user)):
     rng  = random.Random(99)
     data = []
     for i in range(days, -1, -1):
@@ -724,7 +758,7 @@ def timeseries(days: int = 30, db: Session = Depends(get_db)):
 
 # ─── Thresholds ────────────────────────────────────────────────────────────────
 @app.get("/api/thresholds")
-def get_thresholds():
+def get_thresholds(current_user: DBUser = Depends(get_current_user)):
     return {
         "fraud_threshold":       cfg.fraud,
         "high_risk_threshold":   cfg.high,
@@ -786,6 +820,24 @@ def audit_log(
 # ─── WebSocket ─────────────────────────────────────────────────────────────────
 @app.websocket("/ws/alerts")
 async def ws_alerts(ws: WebSocket, token: Optional[str] = None):
+    # The token arrived in the query string all along (the frontend appends it)
+    # but was never verified, so the live alert stream was open to anyone who
+    # knew the URL. Browsers cannot set an Authorization header on a WebSocket
+    # handshake, which is why the token travels as a query parameter here.
+    username = _decode_token(token) if token else None
+    if not username:
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    db = SessionLocal()
+    try:
+        user = db.query(DBUser).filter(
+            DBUser.username == username, DBUser.is_active == True).first()
+    finally:
+        db.close()
+    if not user:
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await ws_mgr.connect(ws)
     try:
         while True:

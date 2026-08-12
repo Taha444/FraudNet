@@ -60,10 +60,9 @@ echo ==========================================
 echo   Dashboard : http://localhost:5173
 echo   API Docs  : http://localhost:8000/docs
 echo.
-echo   Credentials:
-echo     admin   / admin123    (full access)
-echo     analyst / analyst123  (predict + alerts)
-echo     viewer  / viewer123   (read-only)
+echo   Sign in as the administrator set in backend\.env
+echo   (ADMIN_USERNAME / ADMIN_PASSWORD). On an empty database no
+echo   account exists until both are set - see backend\.env.example.
 echo ==========================================
 echo.
 echo Press any key to stop both services...

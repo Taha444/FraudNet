@@ -608,9 +608,9 @@ top8 = sorted(zip(names, vals),<br>
       <div class="card fade-up">
         <h3>دورة حياة الـ Token</h3>
         <div class="topo" style="gap:6px">
-          <div class="topo-box" style="border-color:rgba(0,212,255,.3);color:var(--accent)">admin / admin123</div>
+          <div class="topo-box" style="border-color:rgba(0,212,255,.3);color:var(--accent)">username / password</div>
           <div class="topo-arrow">↓ bcrypt.verify()</div>
-          <div class="topo-box" style="border-color:rgba(129,140,248,.3);color:var(--purple)">JWT.encode({sub:"admin", exp:+8h})</div>
+          <div class="topo-box" style="border-color:rgba(129,140,248,.3);color:var(--purple)">JWT.encode({sub:username, exp:+8h})</div>
           <div class="topo-arrow">↓ Token يُحفظ في localStorage</div>
           <div class="topo-box">Authorization: Bearer eyJ...</div>
           <div class="topo-arrow">↓ في كل request</div>
@@ -659,14 +659,18 @@ axios.interceptors.response.use(<br>
         </div>
       </div>
       <div class="card card-accent fade-up d4">
-        <h3>Default Users</h3>
+        <h3>الأدوار</h3>
         <table style="font-size:11px">
           <tbody>
-            <tr><td class="accent mono">admin</td><td class="mono" style="color:var(--muted)">admin123</td><td><span class="badge badge-danger">admin</span></td></tr>
-            <tr><td class="accent mono">analyst</td><td class="mono" style="color:var(--muted)">analyst123</td><td><span class="badge badge-warn">analyst</span></td></tr>
-            <tr><td class="accent mono">viewer</td><td class="mono" style="color:var(--muted)">viewer123</td><td><span class="badge badge-accent">viewer</span></td></tr>
+            <tr><td><span class="badge badge-danger">admin</span></td><td class="mono" style="color:var(--muted)">صلاحية كاملة + إدارة المستخدمين والحدود</td></tr>
+            <tr><td><span class="badge badge-warn">analyst</span></td><td class="mono" style="color:var(--muted)">التنبؤ ومعالجة الإنذارات</td></tr>
+            <tr><td><span class="badge badge-accent">viewer</span></td><td class="mono" style="color:var(--muted)">اطّلاع فقط</td></tr>
           </tbody>
         </table>
+        <p style="font-size:10px;color:var(--muted);margin-top:8px">
+          لا حسابات افتراضية: أول مدير يُنشأ من ADMIN_USERNAME / ADMIN_PASSWORD،
+          وهو ينشئ البقية عبر POST /api/auth/register.
+        </p>
       </div>
     </div>
   </div>

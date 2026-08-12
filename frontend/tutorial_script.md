@@ -336,7 +336,8 @@
 > يدرّب الموديل، يشغّل الـ Backend، ويشغّل الـ Frontend.
 
 > بعدين افتح المتصفح على **localhost:5173**
-> وادخل بـ admin / admin123.
+> وادخل بالمدير اللي ظبطته في `backend/.env`
+> (‏`ADMIN_USERNAME` و`ADMIN_PASSWORD`) — مفيش حسابات افتراضية.
 
 > أو افتح **localhost:8000/docs**
 > عشان تشوف كل الـ API endpoints بشكل تفاعلي.
