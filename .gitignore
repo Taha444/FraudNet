@@ -7,6 +7,12 @@ __pycache__/
 # Node dependencies — 50 MB، يُعاد إنشاؤها بـ: npm install
 node_modules/
 
+# ناتج بناء الواجهة — يُنتَج بـ: npm run build
+dist/
+
+# ذاكرة pytest المؤقتة
+.pytest_cache/
+
 # حزم وعجلات مُنزَّلة (يوفّرها pip)
 *.whl
 

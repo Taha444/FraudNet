@@ -76,7 +76,25 @@ Training model...
   auc_roc     : 0.9786
 ```
 
-### 4. Start the API
+### 4. Configure the environment
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Fill in at least these three — **the API creates no account and nobody can log
+in until `ADMIN_USERNAME` and `ADMIN_PASSWORD` are set.** There are no default
+credentials.
+
+| Variable | Purpose |
+|---|---|
+| `SECRET_KEY` | JWT signing key. Generate with `python -c "import secrets; print(secrets.token_urlsafe(64))"`. Unset means a new random key each restart, which invalidates every issued token. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | The first administrator, created once while the user table is empty. That admin creates everyone else from **Settings → User Management**. |
+| `DATABASE_URL` | Optional. Defaults to the SQLite file `backend/fraudnet.db`; point it at PostgreSQL for anything concurrent. |
+
+`CORS_ORIGINS` must list the frontend origin when the two are not on the same host.
+
+### 5. Start the API
 
 ```bash
 uvicorn backend.main:app --reload --port 8000
@@ -84,7 +102,7 @@ uvicorn backend.main:app --reload --port 8000
 
 API docs available at: http://localhost:8000/docs
 
-### 5. Start the frontend
+### 6. Start the frontend
 
 ```bash
 cd frontend
@@ -96,21 +114,77 @@ Open http://localhost:5173
 
 ---
 
+## Running with Docker
+
+```bash
+docker compose up --build
+```
+
+The dashboard is served on http://localhost:8080 and the API on
+http://localhost:8000. `backend/.env` must exist first — compose reads it. The
+database lives on the `fraudnet-data` volume, so it survives container
+recreation; both containers run as unprivileged users.
+
+---
+
+## Tests
+
+```bash
+pytest
+```
+
+47 tests covering authentication, role boundaries, input bounds and password
+management. They run against a temporary SQLite database and never touch a real
+one.
+
+---
+
+## Security notes
+
+- Every data endpoint requires a bearer token; only `/`, `/api/health` and the
+  login endpoint are public. The alert WebSocket verifies the token it is given.
+- Roles are `admin`, `analyst` and `viewer`; thresholds, the audit log and user
+  management are admin-only.
+- Passwords are bcrypt-hashed. Any user can change their own from Settings; an
+  admin can reset another user's via
+  `POST /api/auth/users/{username}/reset-password`. Both are recorded in the
+  audit log.
+- `/docs` is publicly reachable. Put the API behind a gateway, or pass
+  `docs_url=None` to `FastAPI(...)`, if the schema should not be exposed.
+
+---
+
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | API health check |
-| GET | `/api/stats` | Dashboard statistics |
-| GET | `/api/timeseries` | 30-day volume/fraud rate |
-| GET | `/api/transactions/recent` | Recent scored transactions |
-| POST | `/api/predict` | Predict a single transaction |
-| POST | `/api/predict/batch` | Predict multiple transactions |
+All endpoints require `Authorization: Bearer <token>` except `/`,
+`/api/health` and `/api/auth/token`.
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| POST | `/api/auth/token` | public | Log in, returns a JWT |
+| GET | `/api/auth/me` | any user | Current account |
+| POST | `/api/auth/register` | admin | Create a user |
+| POST | `/api/auth/change-password` | any user | Change your own password |
+| POST | `/api/auth/users/{username}/reset-password` | admin | Reset another user's password |
+| GET | `/api/health` | public | API health check |
+| GET | `/api/stats` | any user | Dashboard statistics |
+| GET | `/api/timeseries?days=` | any user | Volume/fraud rate, `days` 1–365 |
+| GET | `/api/transactions/recent?limit=` | any user | Recent scored transactions, `limit` 1–500 |
+| PUT | `/api/transactions/{id}/action` | analyst, admin | Block or approve |
+| GET | `/api/alerts?limit=` | any user | Alerts, `limit` 1–500 |
+| PUT | `/api/alerts/{id}/status` | analyst, admin | Update alert status |
+| GET | `/api/thresholds` | any user | Current thresholds |
+| PUT | `/api/thresholds` | admin | Update thresholds (all values 0–1) |
+| GET | `/api/audit?limit=` | admin | Audit log, `limit` 1–1000 |
+| POST | `/api/predict` | any user | Predict a single transaction |
+| POST | `/api/predict/batch` | any user | Predict up to 1000 transactions |
+| WS | `/ws/alerts?token=` | any user | Live alert stream |
 
 ### Example prediction request
 
 ```bash
 curl -X POST http://localhost:8000/api/predict \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "time": 406, "amount": 239.93,

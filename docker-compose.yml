@@ -1,0 +1,39 @@
+# FraudNet — local/staging stack.
+#
+# Copy backend/.env.example to backend/.env and fill in SECRET_KEY,
+# ADMIN_USERNAME and ADMIN_PASSWORD before the first start: with no
+# administrator configured the API creates no account and nobody can log in.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - backend/.env
+    environment:
+      # Persisted on the named volume below, not inside the container layer.
+      DATABASE_URL: sqlite:////app/data/fraudnet.db
+      CORS_ORIGINS: http://localhost:8080
+    volumes:
+      - fraudnet-data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the bundle at build time — point it at the reachable API.
+        VITE_API_URL: http://localhost:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  fraudnet-data:

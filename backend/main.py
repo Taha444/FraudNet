@@ -14,17 +14,17 @@ import os
 import random
 import uuid
 from datetime import datetime, timedelta
-from typing import List, Optional, Any
+from typing import List, Literal, Optional, Any
 
 import joblib
 import numpy as np
 from fastapi import (
-    FastAPI, HTTPException, Depends, WebSocket,
+    FastAPI, HTTPException, Depends, Query, WebSocket,
     WebSocketDisconnect, Request, status,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 # Rate limiting
@@ -227,7 +227,9 @@ class Transaction(BaseModel):
     amount: float
 
 class BatchRequest(BaseModel):
-    transactions: List[Transaction]
+    # Bounded so a single request cannot exhaust memory: every item is scored
+    # and held in the response, and the list was previously unlimited.
+    transactions: List[Transaction] = Field(..., min_length=1, max_length=1000)
 
 class PredictionResponse(BaseModel):
     transaction_id:    str
@@ -245,15 +247,28 @@ class TxActionRequest(BaseModel):
     action: str   # BLOCK | APPROVE
 
 class ThresholdUpdate(BaseModel):
-    fraud_threshold:       float
-    high_risk_threshold:   float
-    medium_risk_threshold: float
+    # All three are probabilities. Only fraud_threshold was range-checked, so
+    # values like high=50 were accepted and silently broke risk classification.
+    fraud_threshold:       float = Field(..., gt=0, lt=1)
+    high_risk_threshold:   float = Field(..., gt=0, lt=1)
+    medium_risk_threshold: float = Field(..., gt=0, lt=1)
 
 class RegisterRequest(BaseModel):
-    username: str
-    email:    str
-    password: str
-    role:     str = "analyst"
+    username: str = Field(..., min_length=3, max_length=50)
+    email:    EmailStr
+    # A password shorter than this is not worth storing; there is no other
+    # length check anywhere in the flow.
+    password: str = Field(..., min_length=8, max_length=128)
+    # Was a free-form string: a typo like "Admin" created an account that could
+    # log in but failed every require_role check, with no error at creation.
+    role:     Literal["admin", "analyst", "viewer"] = "analyst"
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password:     str = Field(..., min_length=8, max_length=128)
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=8, max_length=128)
 
 # ─── Core prediction helpers ───────────────────────────────────────────────────
 def _build_feature_array(tx: Transaction) -> np.ndarray:
@@ -452,6 +467,54 @@ def register(
     _audit(db, admin.username, "REGISTER_USER", target=req.username)
     return {"message": f"User '{req.username}' created with role '{req.role}'"}
 
+
+@app.post("/api/auth/change-password")
+@limiter.limit("5/minute")
+def change_password(
+    request: Request,
+    body: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: DBUser = Depends(get_current_user),
+):
+    """Change your own password.
+
+    There was no way to change a password at all — not for the account holder
+    and not for an administrator — so a credential could never be rotated
+    without editing the database by hand.
+
+    The current password is required so that a token stolen from a browser is
+    not enough on its own to take the account over permanently.
+    """
+    if not verify_password(body.current_password, current_user.hashed_password):
+        _audit(db, current_user.username, "CHANGE_PASSWORD_FAILED")
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400,
+                            detail="New password must differ from the current one")
+    current_user.hashed_password = get_password_hash(body.new_password)
+    db.commit()
+    _audit(db, current_user.username, "CHANGE_PASSWORD")
+    return {"message": "Password changed"}
+
+
+@app.post("/api/auth/users/{username}/reset-password")
+def reset_password(
+    username: str,
+    body: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+    admin: DBUser = Depends(require_role("admin")),
+):
+    """Set another user's password — the recovery path when someone is locked
+    out. Restricted to administrators and recorded in the audit log, naming
+    both the administrator who acted and the account affected."""
+    user = db.query(DBUser).filter(DBUser.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.hashed_password = get_password_hash(body.new_password)
+    db.commit()
+    _audit(db, admin.username, "RESET_PASSWORD", target=username)
+    return {"message": f"Password reset for '{username}'"}
+
 # ─── Health ────────────────────────────────────────────────────────────────────
 @app.get("/")
 def root():
@@ -552,7 +615,7 @@ async def predict_batch(
 # ─── Transactions ──────────────────────────────────────────────────────────────
 @app.get("/api/transactions/recent")
 def recent_transactions(
-    limit: int = 30,
+    limit: int = Query(30, ge=1, le=500),
     risk: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: DBUser = Depends(get_current_user),
@@ -623,7 +686,7 @@ async def transaction_action(
 @app.get("/api/alerts")
 def list_alerts(
     status_filter: Optional[str] = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: DBUser = Depends(get_current_user),
 ):
@@ -726,8 +789,12 @@ def get_stats(db: Session = Depends(get_db),
 
 # ─── Timeseries ────────────────────────────────────────────────────────────────
 @app.get("/api/timeseries")
-def timeseries(days: int = 30, db: Session = Depends(get_db),
+def timeseries(days: int = Query(30, ge=1, le=365),
+               db: Session = Depends(get_db),
                current_user: DBUser = Depends(get_current_user)):
+    # The cap matters more here than on a plain list endpoint: the loop below
+    # runs two COUNT queries per day, so an unbounded `days` turned a single
+    # request into millions of queries and tied up a worker indefinitely.
     rng  = random.Random(99)
     data = []
     for i in range(days, -1, -1):
@@ -772,8 +839,7 @@ def update_thresholds(
     db: Session = Depends(get_db),
     admin: DBUser = Depends(require_role("admin")),
 ):
-    if not (0 < body.fraud_threshold < 1):
-        raise HTTPException(status_code=422, detail="fraud_threshold must be between 0 and 1")
+    # Ranges are enforced by ThresholdUpdate; only the ordering is cross-field.
     if not (body.medium_risk_threshold < body.high_risk_threshold):
         raise HTTPException(status_code=422, detail="high must be > medium threshold")
 
@@ -799,7 +865,7 @@ def update_thresholds(
 # ─── Audit log (admin only) ────────────────────────────────────────────────────
 @app.get("/api/audit")
 def audit_log(
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
     _: DBUser = Depends(require_role("admin")),
 ):

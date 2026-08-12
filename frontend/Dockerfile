@@ -25,5 +25,12 @@ RUN echo 'server { \
                   proxy_set_header Connection "upgrade"; } \
 }' > /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+# nginx:alpine ships an unprivileged `nginx` user but runs as root by default.
+# Port 80 is privileged, so serve on 8080 and let the runtime publish it.
+RUN sed -i 's/listen 80;/listen 8080;/' /etc/nginx/conf.d/default.conf \
+    && sed -i 's|^pid .*|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf \
+    && chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx
+USER nginx
+
+EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]

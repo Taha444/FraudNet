@@ -1,6 +1,7 @@
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 pydantic==2.6.4
+email-validator==2.1.1        # required by pydantic's EmailStr
 xgboost==2.0.3
 pandas==2.3.3
 joblib==1.4.2
@@ -21,3 +22,7 @@ slowapi==0.1.9
 
 # Explainability (optional — removes gracefully if not installed)
 shap==0.45.0
+
+# Tests — run with: pytest  (from the repository root)
+pytest==8.2.0
+httpx==0.27.0                 # required by fastapi's TestClient

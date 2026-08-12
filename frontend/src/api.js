@@ -55,6 +55,14 @@ export const fetchMe = () => api.get('/api/auth/me').then(r => r.data)
 
 export const registerUser = (payload) => api.post('/api/auth/register', payload).then(r => r.data)
 
+export const changePassword = (current_password, new_password) =>
+  api.post('/api/auth/change-password', { current_password, new_password }).then(r => r.data)
+
+// Admin-only recovery path for a locked-out user
+export const resetUserPassword = (username, new_password) =>
+  api.post(`/api/auth/users/${encodeURIComponent(username)}/reset-password`,
+           { new_password }).then(r => r.data)
+
 // ── Core data endpoints ───────────────────────────────────────────────────────
 export const fetchStats      = ()            => api.get('/api/stats').then(r => r.data)
 export const fetchTimeseries = (days = 30)   => api.get(`/api/timeseries?days=${days}`).then(r => r.data)

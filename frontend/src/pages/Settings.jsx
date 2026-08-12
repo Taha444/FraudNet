@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { fetchThresholds, saveThresholds, fetchAuditLog, registerUser } from '../api'
+import { fetchThresholds, saveThresholds, fetchAuditLog, registerUser, changePassword } from '../api'
 import { Panel, Spinner, Badge } from '../components'
 
 const C = { accent:'#00d4ff', danger:'#ff4560', warn:'#f59e0b', ok:'#00e096', muted:'#5a6a8a', text:'#c8d6f0' }
@@ -51,6 +51,12 @@ export default function Settings({ user }) {
   const [regMsg,   setRegMsg]   = useState(null)
   const [regErr,   setRegErr]   = useState(null)
 
+  // Changing your own password — available to every role, not just admins
+  const [pwForm, setPwForm] = useState({ current:'', next:'', confirm:'' })
+  const [pwMsg,  setPwMsg]  = useState(null)
+  const [pwErr,  setPwErr]  = useState(null)
+  const [pwBusy, setPwBusy] = useState(false)
+
   useEffect(() => {
     fetchThresholds()
       .then(d => { setThresh(d); setDraft({ ...d }) })
@@ -91,6 +97,23 @@ export default function Settings({ user }) {
       setRegForm({ username:'', email:'', password:'', role:'analyst' })
     } catch (err) {
       setRegErr(err.response?.data?.detail || 'Registration failed')
+    }
+  }
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault()
+    setPwMsg(null); setPwErr(null)
+    if (pwForm.next !== pwForm.confirm) { setPwErr('New passwords do not match'); return }
+    if (pwForm.next.length < 8) { setPwErr('New password must be at least 8 characters'); return }
+    setPwBusy(true)
+    try {
+      await changePassword(pwForm.current, pwForm.next)
+      setPwMsg('Password changed')
+      setPwForm({ current:'', next:'', confirm:'' })
+    } catch (err) {
+      setPwErr(err.response?.data?.detail || 'Could not change password')
+    } finally {
+      setPwBusy(false)
     }
   }
 
@@ -212,6 +235,39 @@ export default function Settings({ user }) {
               </form>
             </Panel>
           )}
+
+          {/* Own password — every role, not just admins */}
+          <Panel title="Change Password" sub="Update your own credentials">
+            <form onSubmit={handleChangePassword} style={{ padding: 16 }}>
+              {pwMsg && <div style={{ padding:'7px 10px', background:'rgba(0,224,150,0.08)', border:'1px solid rgba(0,224,150,0.25)', borderRadius:5, fontSize:10, color:C.ok, marginBottom:12 }}>{pwMsg}</div>}
+              {pwErr && <div style={{ padding:'7px 10px', background:'rgba(255,69,96,0.08)', border:'1px solid rgba(255,69,96,0.25)', borderRadius:5, fontSize:10, color:C.danger, marginBottom:12 }}>{pwErr}</div>}
+
+              {[
+                { key:'current', label:'Current password' },
+                { key:'next',    label:'New password' },
+                { key:'confirm', label:'Confirm new password' },
+              ].map(({ key, label }) => (
+                <div key={key} style={{ marginBottom:10 }}>
+                  <label style={{ fontSize:9, color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', display:'block', marginBottom:4 }}>{label}</label>
+                  <input
+                    type="password" value={pwForm[key]} placeholder="••••••••" autoComplete="off"
+                    onChange={e => setPwForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:4, padding:'7px 10px', fontSize:11, color:'var(--text)', outline:'none', fontFamily:'var(--font-mono)', boxSizing:'border-box' }}
+                    onFocus={e => e.target.style.borderColor='var(--accent)'}
+                    onBlur={e  => e.target.style.borderColor='var(--border)'}
+                  />
+                </div>
+              ))}
+
+              <div style={{ fontSize:9, color:'var(--muted)', marginBottom:10 }}>
+                At least 8 characters, and different from the current one.
+              </div>
+
+              <button type="submit" disabled={pwBusy} style={{ width:'100%', padding:'8px 0', borderRadius:5, background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', color:C.accent, fontSize:10, fontWeight:600, letterSpacing:'0.08em', fontFamily:'var(--font-mono)', cursor: pwBusy ? 'wait' : 'pointer' }}>
+                {pwBusy ? 'SAVING...' : 'CHANGE PASSWORD'}
+              </button>
+            </form>
+          </Panel>
 
           {/* System info */}
           <Panel title="System Info" sub="Runtime configuration">
