@@ -98,3 +98,29 @@ def test_viewer_cannot_reach_admin_endpoints(client, viewer):
 
 def test_viewer_can_read_data(client, viewer):
     assert client.get("/api/alerts", headers=viewer["headers"]).status_code == 200
+
+
+# ── API schema exposure ───────────────────────────────────────────────────────
+
+def test_docs_are_closed_by_default(client):
+    """/docs, /redoc and the OpenAPI schema published the entire API surface to
+    anyone who visited them. They are off unless ENABLE_DOCS is set."""
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404, f"{path} is still reachable"
+
+
+def test_docs_can_be_enabled_for_development(monkeypatch):
+    """Turning them back on is a deliberate, single-variable decision."""
+    monkeypatch.setenv("ENABLE_DOCS", "1")
+    import importlib
+
+    from backend import main as m
+    reloaded = importlib.reload(m)
+    try:
+        from fastapi.testclient import TestClient
+        with TestClient(reloaded.app) as c:
+            assert c.get("/docs").status_code == 200
+    finally:
+        # Restore the module for the rest of the session
+        monkeypatch.delenv("ENABLE_DOCS", raising=False)
+        importlib.reload(m)

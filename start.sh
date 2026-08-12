@@ -53,7 +53,7 @@ cd ..
 echo ""
 echo "────────────────────────────────────────────"
 echo "  Dashboard : http://localhost:5173"
-echo "  API Docs  : http://localhost:8000/docs"
+echo "  API Docs  : off by default — start with ENABLE_DOCS=1 for /docs"
 echo ""
 echo "  Sign in as the administrator set in backend/.env"
 echo "  (ADMIN_USERNAME / ADMIN_PASSWORD). On an empty database no"

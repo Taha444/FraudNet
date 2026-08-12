@@ -202,7 +202,19 @@ async def lifespan(app: FastAPI):
 # ─── App setup ─────────────────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
-app = FastAPI(title="FraudNet API", version="3.0.0", lifespan=lifespan)
+# The interactive docs are off unless ENABLE_DOCS is set, so a deployment does
+# not publish its full API surface — every route, parameter and schema — to
+# anyone who visits /docs. openapi.json goes with them: leaving the schema
+# reachable would hand over the same information without the browser UI.
+# Developers turn it back on locally with ENABLE_DOCS=1.
+_DOCS_ENABLED = os.environ.get("ENABLE_DOCS", "").strip().lower() in ("1", "true", "yes")
+
+app = FastAPI(
+    title="FraudNet API", version="3.0.0", lifespan=lifespan,
+    docs_url    = "/docs"         if _DOCS_ENABLED else None,
+    redoc_url   = "/redoc"        if _DOCS_ENABLED else None,
+    openapi_url = "/openapi.json" if _DOCS_ENABLED else None,
+)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

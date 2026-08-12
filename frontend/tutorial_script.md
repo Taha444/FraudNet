@@ -339,8 +339,8 @@
 > وادخل بالمدير اللي ظبطته في `backend/.env`
 > (‏`ADMIN_USERNAME` و`ADMIN_PASSWORD`) — مفيش حسابات افتراضية.
 
-> أو افتح **localhost:8000/docs**
-> عشان تشوف كل الـ API endpoints بشكل تفاعلي.
+> ولو عايز تستكشف الـ API، شغّل الـ Backend بـ `ENABLE_DOCS=1`
+> وافتح **localhost:8000/docs** — مقفول افتراضيًا في النشر.
 
 ---
 

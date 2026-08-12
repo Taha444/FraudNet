@@ -100,7 +100,8 @@ credentials.
 uvicorn backend.main:app --reload --port 8000
 ```
 
-API docs available at: http://localhost:8000/docs
+Interactive API docs are off by default. To browse them while developing, start
+with `ENABLE_DOCS=1` and open http://localhost:8000/docs.
 
 ### 6. Start the frontend
 
@@ -149,8 +150,8 @@ one.
   admin can reset another user's via
   `POST /api/auth/users/{username}/reset-password`. Both are recorded in the
   audit log.
-- `/docs` is publicly reachable. Put the API behind a gateway, or pass
-  `docs_url=None` to `FastAPI(...)`, if the schema should not be exposed.
+- `/docs`, `/redoc` and `/openapi.json` return 404 unless `ENABLE_DOCS=1`, so a
+  deployment does not publish its API surface. Set it locally while developing.
 
 ---
 
