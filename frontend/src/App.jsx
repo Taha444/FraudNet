@@ -1,29 +1,72 @@
 import React, { useState, useEffect } from 'react'
-import Dashboard from './pages/Dashboard'
+import Dashboard    from './pages/Dashboard'
 import Transactions from './pages/Transactions'
-import Predict from './pages/Predict'
-import Alerts from './pages/Alerts'
+import Predict      from './pages/Predict'
+import Alerts       from './pages/Alerts'
+import Settings     from './pages/Settings'
+import Login        from './pages/Login'
 import { StatusDot, Badge } from './components'
-import { health } from './api'
+import { health, auth, fetchMe } from './api'
 
 const NAV = [
   { id: 'dashboard',    label: 'Dashboard',     icon: '▦' },
   { id: 'transactions', label: 'Transactions',  icon: '⇄' },
   { id: 'predict',      label: 'Predict',       icon: '◎' },
-  { id: 'alerts',       label: 'Alerts',        icon: '⚑', badge: 3 },
+  { id: 'alerts',       label: 'Alerts',        icon: '⚑' },
+  { id: 'settings',     label: 'Settings',      icon: '⚙', adminOnly: true },
 ]
 
-export default function App() {
-  const [page, setPage] = useState('dashboard')
-  const [apiOk, setApiOk] = useState(null)
+const PAGE_MAP = {
+  dashboard: Dashboard, transactions: Transactions,
+  predict: Predict, alerts: Alerts, settings: Settings,
+}
 
+export default function App() {
+  const [page,    setPage]    = useState('dashboard')
+  const [apiOk,   setApiOk]   = useState(null)
+  const [user,    setUser]     = useState(() => auth.getUser())
+  const [loading, setLoading]  = useState(true)
+
+  // Re-validate token on mount
   useEffect(() => {
-    health()
-      .then(() => setApiOk(true))
-      .catch(() => setApiOk(false))
+    const token = auth.getToken()
+    if (token) {
+      fetchMe()
+        .then(u => { auth.setSession(token, u); setUser(u) })
+        .catch(() => { auth.clear(); setUser(null) })
+        .finally(() => setLoading(false))
+    } else {
+      setLoading(false)
+    }
   }, [])
 
-  const PAGE_MAP = { dashboard: Dashboard, transactions: Transactions, predict: Predict, alerts: Alerts }
+  // API health check
+  useEffect(() => {
+    health().then(() => setApiOk(true)).catch(() => setApiOk(false))
+  }, [])
+
+  // Auto-logout on 401 from any request
+  useEffect(() => {
+    const handler = () => setUser(null)
+    window.addEventListener('fraudnet:logout', handler)
+    return () => window.removeEventListener('fraudnet:logout', handler)
+  }, [])
+
+  const handleLogin  = (u) => setUser(u)
+  const handleLogout = ()  => { auth.clear(); setUser(null) }
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
+        <div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)', animation: 'spin 0.8s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
+
+  if (!user) return <Login onLogin={handleLogin} />
+
+  const visibleNav = NAV.filter(n => !n.adminOnly || user.role === 'admin')
   const Page = PAGE_MAP[page] || Dashboard
 
   return (
@@ -44,12 +87,12 @@ export default function App() {
             </svg>
           </div>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>FraudNet</div>
-          <div style={{ fontSize: 9, color: 'var(--muted)' }}>v2.3 · IEEE / Kaggle</div>
+          <div style={{ fontSize: 9, color: 'var(--muted)' }}>v3.0 · XGBoost + SHAP</div>
         </div>
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: '8px 0' }}>
-          {NAV.map(({ id, label, icon, badge }) => (
+          {visibleNav.map(({ id, label, icon }) => (
             <button key={id} onClick={() => setPage(id)} style={{
               width: '100%', padding: '9px 16px', display: 'flex', alignItems: 'center', gap: 10,
               background: page === id ? 'rgba(0,212,255,0.07)' : 'transparent',
@@ -58,23 +101,33 @@ export default function App() {
               fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
               textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s',
             }}
-            onMouseEnter={e => { if (page !== id) { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)' } }}
-            onMouseLeave={e => { if (page !== id) { e.currentTarget.style.color = 'var(--muted)'; e.currentTarget.style.background = 'transparent' } }}
+            onMouseEnter={e => { if (page !== id) { e.currentTarget.style.color='var(--text)'; e.currentTarget.style.background='rgba(255,255,255,0.02)' }}}
+            onMouseLeave={e => { if (page !== id) { e.currentTarget.style.color='var(--muted)'; e.currentTarget.style.background='transparent' }}}
             >
               <span style={{ fontSize: 13, flexShrink: 0 }}>{icon}</span>
               <span style={{ flex: 1 }}>{label}</span>
-              {badge && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(255,69,96,0.2)', color: 'var(--danger)', border: '1px solid rgba(255,69,96,0.35)' }}>{badge}</span>}
             </button>
           ))}
         </nav>
 
-        {/* Status */}
+        {/* User + Status */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 4 }}>
+          {/* User pill */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)' }}>{user.username}</div>
+              <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{user.role}</div>
+            </div>
+            <button onClick={handleLogout} title="Logout" style={{
+              background: 'rgba(255,69,96,0.08)', border: '1px solid rgba(255,69,96,0.25)',
+              borderRadius: 4, padding: '3px 8px', fontSize: 9, color: 'var(--danger)',
+              cursor: 'pointer', fontFamily: 'var(--font-mono)',
+            }}>OUT</button>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--muted)' }}>
             <StatusDot color={apiOk ? 'var(--ok)' : 'var(--warn)'} />
             {apiOk === null ? 'CONNECTING...' : apiOk ? 'API ONLINE' : 'DEMO MODE'}
           </div>
-          <div style={{ fontSize: 9, color: 'var(--muted)' }}>284,807 tx · XGBoost</div>
         </div>
       </aside>
 
@@ -88,21 +141,20 @@ export default function App() {
         }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', letterSpacing: '0.04em' }}>
-              {NAV.find(n => n.id === page)?.label}
+              {visibleNav.find(n => n.id === page)?.label}
             </div>
             <div style={{ fontSize: 10, color: 'var(--muted)' }}>
               Credit Card Fraud Detection · Kaggle Dataset
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <Badge color="var(--accent)">XGBoost + IsoForest</Badge>
+            <Badge color="var(--accent)">XGBoost + SHAP</Badge>
             <Badge color={apiOk ? 'var(--ok)' : 'var(--warn)'}>{apiOk ? 'API LIVE' : 'DEMO'}</Badge>
           </div>
         </header>
 
-        {/* Page content */}
         <main style={{ flex: 1, overflow: 'auto', padding: 20 }}>
-          <Page />
+          <Page user={user} />
         </main>
       </div>
     </div>

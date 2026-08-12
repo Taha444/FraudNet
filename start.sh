@@ -1,41 +1,68 @@
 #!/bin/bash
-# start.sh — Launch FraudNet API + Frontend together
+# start.sh — Launch FraudNet v3.0 (API + Frontend)
 
 echo ""
-echo "╔══════════════════════════════════════╗"
-echo "║        FraudNet v2.3 Startup         ║"
-echo "╚══════════════════════════════════════╝"
+echo "╔══════════════════════════════════════════╗"
+echo "║         FraudNet v3.0 Startup            ║"
+echo "║  Auth · WebSocket · SHAP · SQLite DB     ║"
+echo "╚══════════════════════════════════════════╝"
 echo ""
 
-# Check for trained model
+# ── Install Python dependencies if needed ─────────────────────────────────────
+if ! python -c "import sqlalchemy, jose, passlib, slowapi" 2>/dev/null; then
+  echo "[*] Installing Python dependencies..."
+  pip install -r requirements.txt -q
+fi
+
+# ── Install Node dependencies if needed ───────────────────────────────────────
+if [ ! -d "frontend/node_modules" ]; then
+  echo "[*] Installing frontend dependencies..."
+  cd frontend && npm install -q && cd ..
+fi
+
+# ── Train model if missing ────────────────────────────────────────────────────
 if [ ! -f "models/fraud_model.pkl" ]; then
   echo "[!] No trained model found."
-  echo "    Training model now (requires data/creditcard.csv)..."
-  echo ""
-  python -m backend.train
-  if [ $? -ne 0 ]; then
-    echo ""
-    echo "[!] Training failed. Starting API in demo mode."
+  if [ -f "data/creditcard.csv" ]; then
+    echo "    Training model now (this takes ~2 min)..."
+    python -m backend.train
+    [ $? -ne 0 ] && echo "[!] Training failed — API will run in demo mode."
+  else
+    echo "    data/creditcard.csv not found — API runs in demo mode."
+    echo "    Download from: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud"
   fi
 fi
 
 echo ""
-echo "[1] Starting FastAPI backend on http://localhost:8000 ..."
+echo "[1] Starting FastAPI backend  →  http://localhost:8000"
 uvicorn backend.main:app --reload --port 8000 &
 BACKEND_PID=$!
 
-echo "[2] Starting React frontend on http://localhost:5173 ..."
+# Wait until backend is ready
+echo "    Waiting for backend..."
+for i in $(seq 1 20); do
+  sleep 1
+  curl -sf http://localhost:8000/api/health > /dev/null 2>&1 && break
+done
+
+echo "[2] Starting React frontend   →  http://localhost:5173"
 cd frontend && npm run dev &
 FRONTEND_PID=$!
+cd ..
 
 echo ""
-echo "──────────────────────────────────────"
-echo "  Dashboard: http://localhost:5173"
-echo "  API Docs:  http://localhost:8000/docs"
-echo "──────────────────────────────────────"
+echo "────────────────────────────────────────────"
+echo "  Dashboard : http://localhost:5173"
+echo "  API Docs  : http://localhost:8000/docs"
+echo ""
+echo "  Default credentials:"
+echo "    admin   / admin123   (full access)"
+echo "    analyst / analyst123 (predict + alerts)"
+echo "    viewer  / viewer123  (read-only)"
+echo "────────────────────────────────────────────"
 echo ""
 echo "Press Ctrl+C to stop all services."
 echo ""
 
-trap "echo ''; echo 'Stopping...'; kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT
+trap "echo ''; echo 'Stopping services...'; kill \$BACKEND_PID \$FRONTEND_PID 2>/dev/null; exit" INT
 wait
