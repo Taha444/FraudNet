@@ -11,6 +11,10 @@ scikit-learn==1.7.2
 
 # Database
 sqlalchemy==2.0.30
+# PostgreSQL driver. SQLite needs no driver, so this is only used when
+# DATABASE_URL points at PostgreSQL — SQLAlchemy imports it at create_engine
+# time and fails immediately if it is missing.
+psycopg2-binary==2.9.12
 
 # Authentication
 python-jose[cryptography]==3.3.0

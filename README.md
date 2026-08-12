@@ -90,7 +90,7 @@ credentials.
 |---|---|
 | `SECRET_KEY` | JWT signing key. Generate with `python -c "import secrets; print(secrets.token_urlsafe(64))"`. Unset means a new random key each restart, which invalidates every issued token. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | The first administrator, created once while the user table is empty. That admin creates everyone else from **Settings → User Management**. |
-| `DATABASE_URL` | Optional. Defaults to the SQLite file `backend/fraudnet.db`; point it at PostgreSQL for anything concurrent. |
+| `DATABASE_URL` | Optional. Defaults to the SQLite file `backend/fraudnet.db`. For anything concurrent use PostgreSQL — `postgresql+psycopg2://user:pass@host:5432/fraudnet`; the driver is already in `requirements.txt`. |
 
 `CORS_ORIGINS` must list the frontend origin when the two are not on the same host.
 
